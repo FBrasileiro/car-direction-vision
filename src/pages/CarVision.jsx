@@ -3,17 +3,82 @@ import styled from "styled-components";
 import { Header } from "../components/Header";
 
 export function CarVision() {
+  const [completed, setCompleted] = useState(false)
   const [videoSrc, setVideoSrc] = useState(""); // Estado para armazenar o vídeo carregado
+  const [videoSrc2, setVideoSrc2] = useState(""); // Estado para armazenar o vídeo carregado
+  const [videoFilename, setVideoFilename] = useState(""); // Estado para armazenar o nome do arquivo do vídeo
+  const [loading, setLoading] = useState(false); // Estado para indicar se o vídeo está sendo processado
   const videoRef1 = useRef(null);
   const videoRef2 = useRef(null);
 
-  // Função para lidar com o upload do vídeo
-  const handleVideoUpload = (event) => {
+  // Função para lidar com o upload do vídeo e envio para o servidor
+  const handleVideoUpload = async (event) => {
+    setCompleted(false)
     const file = event.target.files[0];
     if (file) {
       const videoURL = URL.createObjectURL(file);
       setVideoSrc(videoURL);
+      setLoading(true); // Começa o carregamento
+
+      const formData = new FormData();
+      formData.append("video", file);
+
+      try {
+        const response = await fetch("http://192.168.68.103:5001/upload", {
+          method: "POST",
+          body: formData,
+        });
+
+        if (!response.ok) {
+          throw new Error("Falha ao enviar o vídeo");
+        }
+
+        const data = await response.json();
+        setVideoFilename(data.filename); // Armazena o nome do arquivo recebido
+        checkVideoStatus(data.filename); // Começa a verificar o status do vídeo
+      } catch (error) {
+        alert("Erro ao enviar o vídeo: " + error.message);
+        setLoading(false); // Encerra o carregamento em caso de erro
+      }
     }
+  };
+
+  // Função para verificar o status do vídeo
+  const checkVideoStatus = async (filename) => {
+    let attempts = 0;
+    const maxAttempts = 100;  // Número máximo de tentativas
+
+    const interval = setInterval(async () => {
+      if (attempts >= maxAttempts) {
+        clearInterval(interval);
+        alert("O vídeo demorou demais para processar.");
+        setLoading(false);
+        return;
+      }
+
+      try {
+        const response = await fetch(`http://192.168.68.103:5001/video/status/${filename}`);
+        const data = await response.json();
+        console.log(data)
+        console.log(filename)
+
+        if (data.status === "done" && !completed) {
+          setCompleted(true)
+          setVideoSrc2(`http://192.168.68.103:5001/video/${filename}`);
+          setLoading(false); // Vídeo pronto, encerra o carregamento
+          clearInterval(interval);
+        } else if (data.status === "processing") {
+          console.log("O vídeo ainda está sendo processado...");
+        } else {
+          clearInterval(interval);
+          alert("Erro ao verificar o status do vídeo.");
+          setLoading(false);
+        }
+      } catch (error) {
+        console.error("Erro ao verificar o status:", error);
+      }
+      attempts += 1;
+    }, 3000); // Tenta a cada 3 segundos
   };
 
   // Funções para controlar os vídeos
@@ -55,7 +120,8 @@ export function CarVision() {
             onChange={handleVideoUpload}
           />
         </UploadSection>
-        {videoSrc && (
+        {loading && <MessageBox>O vídeo está sendo processado, aguarde...</MessageBox>}
+        {videoSrc && !loading && (
           <>
             <VideoSection>
               <VideoWrapper>
@@ -63,7 +129,7 @@ export function CarVision() {
                 <VideoLabel>Vídeo Original</VideoLabel>
               </VideoWrapper>
               <VideoWrapper>
-                <VideoPlayer ref={videoRef2} src={videoSrc} controls={false} />
+                <VideoPlayer ref={videoRef2} src={videoSrc2} controls={false} />
                 <VideoLabel>Vídeo Tratado</VideoLabel>
               </VideoWrapper>
             </VideoSection>
@@ -188,3 +254,4 @@ const ControlButton = styled.button`
     background-color: #218838;
   }
 `;
+
